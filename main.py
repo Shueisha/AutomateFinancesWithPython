@@ -39,10 +39,22 @@ def categorize_transactions(df):
 
 def load_transactions(file):
     try:
-        df = pd.read_csv(file)
+        # Read CSV and clean whitespace
+        df = pd.read_csv(file, skipinitialspace=True)
         df.columns = [col.strip() for col in df.columns]
-        df["Amount"] = df["Amount"].str.replace(",", "").astype(float)
-        df["Date"] = pd.to_datetime(df["Date"], format="%d %b %Y") 
+        
+        # Convert Amount to float (it's already numeric)
+        df["Amount"] = df["Amount"].astype(float)
+        
+        # Convert Date format
+        df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y")
+        
+        # Add Debit/Credit column based on Amount
+        df["Debit/Credit"] = df["Amount"].apply(lambda x: "Credit" if x > 0 else "Debit")
+        
+        # Select and reorder columns we need
+        df = df[["Date", "Memo", "Amount", "Debit/Credit"]]
+        df = df.rename(columns={"Memo": "Details"})
         
         return categorize_transactions(df)
     except Exception as e:
