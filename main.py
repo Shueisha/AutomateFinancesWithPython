@@ -244,35 +244,119 @@ def main():
                 st.write(credits_df)
             
             with tab3:
-                st.subheader("Spending Analysis")
+                st.subheader("Historical Analysis")
                 
-                # Daily spending pattern
-                daily_spending = debits_df.groupby("Date")["Amount"].sum().reset_index()
-                fig = px.line(daily_spending, x="Date", y="Amount", 
-                            title="Daily Spending Pattern",
-                            labels={"Amount": "Amount (£)"})
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Monthly totals
-                monthly_spending = debits_df.set_index('Date').resample('M')['Amount'].sum().reset_index()
-                monthly_spending['Month'] = monthly_spending['Date'].dt.strftime('%B %Y')
-                
-                fig = px.bar(monthly_spending, x='Month', y='Amount',
-                           title="Monthly Spending Totals",
-                           labels={"Amount": "Amount (£)"})
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Top 10 expenses
-                st.subheader("Top 10 Individual Expenses")
-                top_expenses = debits_df.nlargest(10, "Amount")[["Date", "Details", "Amount", "Category"]]
-                st.dataframe(
-                    top_expenses,
-                    column_config={
-                        "Amount": st.column_config.NumberColumn("Amount", format="£%.2f"),
-                        "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY")
-                    },
-                    use_container_width=True
+                # Date range selector
+                date_range = st.date_input(
+                    "Select Date Range",
+                    [df['Date'].min(), df['Date'].max()]
                 )
+                
+                # Monthly Overview
+                st.subheader("Monthly Overview")
+                monthly_spending, category_trends = analyze_historical_trends(df)
+                
+                # Plot monthly total spending
+                fig = px.line(monthly_spending, 
+                              x='Date', 
+                              y='Amount',
+                              title="Monthly Spending Trends",
+                              labels={"Amount": "Amount (£)"})
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Category breakdown over time
+                st.subheader("Category Trends")
+                # Melt the category trends for plotting
+                category_trends_melted = pd.melt(category_trends, 
+                                                id_vars=['Date'], 
+                                                var_name='Category', 
+                                                value_name='Amount')
+                fig = px.line(category_trends_melted, 
+                              x='Date', 
+                              y='Amount',
+                              color='Category',
+                              title="Spending by Category Over Time")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Savings Projections
+                st.subheader("Savings Projections")
+                projections = calculate_savings_projections(df)
+                
+                # Plot projections
+                fig = px.line(projections, 
+                              title="12-Month Savings Projection",
+                              labels={"value": "Projected Savings (£)"})
+                st.plotly_chart(fig)
+                
+                # Savings Goals
+                st.subheader("Savings Goals")
+                goal_amount = st.number_input("Set Savings Goal (£)", min_value=0.0)
+                if goal_amount > 0:
+                    current_savings = projections[-1]
+                    avg_monthly_net = projections[-1] / 12
+                    months_to_goal = (goal_amount - current_savings) / avg_monthly_net
+                    st.write(f"At your current rate, you'll reach your goal in {months_to_goal:.1f} months")
+
+                # Budget Tracking
+                track_budget_vs_actual(df)
+
+def analyze_historical_trends(df):
+    # Monthly spending trends - only look at amounts
+    monthly_spending = df.groupby(pd.Grouper(key='Date', freq='M'))['Amount'].sum().reset_index()
+    
+    # Category trends over time
+    category_trends = df.pivot_table(
+        index=pd.Grouper(key='Date', freq='M'),
+        columns='Category',
+        values='Amount',
+        aggfunc='sum'
+    ).fillna(0).reset_index()
+    
+    return monthly_spending, category_trends
+
+def calculate_savings_projections(df):
+    # Calculate average monthly income and expenses
+    monthly_net = df.groupby([df['Date'].dt.year, df['Date'].dt.month])['Amount'].sum()
+    avg_monthly_net = monthly_net.mean()
+    
+    # Project next 12 months
+    current_savings = monthly_net.sum()
+    projected_savings = [current_savings]
+    for _ in range(12):
+        projected_savings.append(projected_savings[-1] + avg_monthly_net)
+    
+    return projected_savings
+
+def save_historical_data(df):
+    # Create a directory for historical data if it doesn't exist
+    if not os.path.exists('historical_data'):
+        os.makedirs('historical_data')
+    
+    # Save the current month's data
+    month_year = df['Date'].max().strftime('%Y_%m')
+    df.to_csv(f'historical_data/{month_year}.csv', index=False)
+
+def track_budget_vs_actual(df):
+    # Set budget limits per category
+    if 'budget_limits' not in st.session_state:
+        st.session_state.budget_limits = {}
+    
+    st.subheader("Budget Tracking")
+    for category in df['Category'].unique():
+        if category not in st.session_state.budget_limits:
+            st.session_state.budget_limits[category] = 0
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.budget_limits[category] = st.number_input(
+                f"Budget for {category}",
+                value=st.session_state.budget_limits[category]
+            )
+        with col2:
+            actual_spending = abs(df[df['Category'] == category]['Amount'].sum())
+            progress = actual_spending / st.session_state.budget_limits[category] if st.session_state.budget_limits[category] > 0 else 0
+            st.progress(min(progress, 1.0))
+            st.write(f"Spent: £{actual_spending:.2f}")
 
 main()
 

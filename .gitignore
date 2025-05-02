@@ -1,4 +1,18 @@
+# CSV files
 barclays feb.csv
 barclays_april_fixed.csv
 barclays april.csv
+
+# JSON files
 categories.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+.env
+.venv
+env/
+venv/
